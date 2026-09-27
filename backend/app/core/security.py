@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import ipaddress
+import re
 import socket
 from urllib.parse import urlparse
 from uuid import uuid4
@@ -41,6 +42,21 @@ def build_cors_origins(settings: Settings) -> list[str]:
         logger.warning("Wildcard CORS origin rejected in production; falling back to an empty allow-list.")
         return []
     return origins
+
+
+def build_cors_origin_regex(settings: Settings) -> str | None:
+    """Regex for https-only subdomains of the configured hostname suffixes.
+
+    Returns ``None`` when no suffix is configured, so the exact-match allow-list
+    keeps working unchanged. This exists so a Render deployment can accept its own
+    frontend without the operator having to know the generated hostname: Render
+    always serves services from ``<service>.onrender.com``.
+    """
+    suffixes = settings.allowed_origin_suffix_list
+    if not suffixes:
+        return None
+    alternatives = "|".join(re.escape(suffix.lstrip(".")) for suffix in suffixes)
+    return rf"^https://[a-zA-Z0-9]([a-zA-Z0-9-]*[a-zA-Z0-9])?\.({alternatives})$"
 
 
 def normalize_origin(origin: str) -> str:

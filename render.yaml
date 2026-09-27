@@ -1,7 +1,8 @@
 # Render blueprint for Niva — facts-only RAG assistant for HDFC mutual funds.
 #
-# Two web services: the browser talks to the API directly, so the API and the UI are
-# deployed separately and the API's CORS allow-list names the UI's public origin.
+# Two web services, deployed from this blueprint. The only value you add by hand
+# on Render is the secret GEMINI_API_KEY. Every other setting is either committed
+# here as a plain value or defaulted in backend/app/core/config.py.
 #
 # Both services are on the `free` compute plan: 512 MB RAM and 0.1 CPU.
 #   * Memory is the binding constraint. The embedder runs on ONNX Runtime, not
@@ -69,9 +70,13 @@ services:
         value: gemini
       - key: LLM_MODEL
         value: gemini-3.8-flash
-      # Must be the deployed frontend origin, e.g. https://niva-web.onrender.com
-      - key: ALLOWED_ORIGINS
-        sync: false
+      # Render always serves services from <service>.onrender.com, so the browser
+      # origin of this deployment's own frontend is known without being spelled out.
+      # This is not a credential and grants no access; it only satisfies the
+      # browser's same-origin check. Add explicit origins here for a custom domain.
+      - key: ALLOWED_ORIGIN_SUFFIXES
+        value: .onrender.com
+      # The only value you must add by hand.
       - key: GEMINI_API_KEY
         sync: false
 
@@ -87,9 +92,7 @@ services:
     envVars:
       - key: NODE_VERSION
         value: "24"
-      # Must match the API's public URL, and the API's ALLOWED_ORIGINS must match
-      # this service's public URL. Set both before the first build: Next.js inlines
-      # NEXT_PUBLIC_* into the client bundle at build time, so changing it later
-      # requires a rebuild, not just a restart.
+      # The API hostname is fixed by the service name above, so the frontend URL is
+      # a known, non-secret value: no manual entry needed.
       - key: NEXT_PUBLIC_API_BASE_URL
-        sync: false
+        value: https://niva-api.onrender.com

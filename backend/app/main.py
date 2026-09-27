@@ -20,6 +20,7 @@ from app.core.logging import configure_logging, get_logger, log_event, register_
 from app.core.security import (
     RequestSizeLimitMiddleware,
     SecurityHeadersMiddleware,
+    build_cors_origin_regex,
     build_cors_origins,
 )
 
@@ -100,9 +101,11 @@ def create_app() -> FastAPI:
     )
 
     origins = build_cors_origins(settings)
+    origin_regex = build_cors_origin_regex(settings)
     app.add_middleware(
         CORSMiddleware,
         allow_origins=origins,
+        allow_origin_regex=origin_regex,
         allow_credentials=False,
         allow_methods=["GET", "POST", "OPTIONS"],
         allow_headers=["Content-Type", "X-Request-Id"],
@@ -145,7 +148,11 @@ def create_app() -> FastAPI:
             content={"detail": "An unexpected error occurred. Please try again."},
         )
 
-    logger.info("CORS allowed origins: %s", origins if origins else "(none)")
+    logger.info(
+        "CORS allowed origins: %s%s",
+        origins if origins else "(none)",
+        f" + suffixes {settings.allowed_origin_suffix_list}" if origin_regex else "",
+    )
     return app
 
 

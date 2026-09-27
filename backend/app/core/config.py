@@ -6,6 +6,7 @@ All environment-specific values are read here. Nothing else in the codebase read
 
 from __future__ import annotations
 
+import sys
 from functools import lru_cache
 from pathlib import Path
 from typing import Literal
@@ -76,6 +77,12 @@ class Settings(BaseSettings):
     # --- API / security ---------------------------------------------------
     # Comma-separated in the environment; exposed as a list via allowed_origin_list.
     allowed_origins: str = "http://localhost:3000"
+    # Comma-separated hostname suffixes, e.g. ".onrender.com". Lets a deployment
+    # accept its own frontend without knowing the hostname in advance, so the
+    # default Render setup needs no manual CORS value. These are matched as
+    # https-only subdomains; they are NOT credentials and grant no access on
+    # their own, they only relax the browser's same-origin check.
+    allowed_origin_suffixes: str = ""
     enable_docs: bool = True
     debug_rag: bool = False
     max_request_bytes: int = 16_384
@@ -149,6 +156,32 @@ class Settings(BaseSettings):
             except json.JSONDecodeError:
                 pass
         return [origin.strip().rstrip("/") for origin in text.split(",") if origin.strip()]
+
+    @property
+    def allowed_origin_suffix_list(self) -> list[str]:
+        """Configured hostname suffixes, normalised to a leading dot, no scheme."""
+        text = (self.allowed_origin_suffixes or "").strip()
+        if not text:
+            return []
+        suffixes: list[str] = []
+        invalid: list[str] = []
+        for raw in text.split(","):
+            item = raw.strip().lower().rstrip("/")
+            if not item:
+                continue
+            # Accept "onrender.com" and ".onrender.com"; reject anything with a
+            # scheme, path, port or wildcard, since those would widen the match
+            # beyond a plain subdomain rule.
+            if "://" in item or "/" in item or ":" in item or "*" in item:
+                invalid.append(item)
+                continue
+            suffixes.append(item if item.startswith(".") else f".{item}")
+        for bad in invalid:
+            print(
+                f"WARNING: ignoring invalid ALLOWED_ORIGIN_SUFFIXES entry: {bad!r}",
+                file=sys.stderr,
+            )
+        return suffixes
 
     # --- Validators -------------------------------------------------------
     @field_validator("log_level")

@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 from datetime import datetime, timezone
 from urllib.parse import urlparse
 
@@ -23,7 +24,7 @@ from app.core.logging import (
     redact,
     register_secret,
 )
-from app.core.security import build_cors_origins, normalize_origin, validate_ingest_url
+from app.core.security import build_cors_origin_regex, build_cors_origins, normalize_origin, validate_ingest_url
 from app.models.enums import SourceType
 from app.services.ingestion.loader import DocumentLoader
 from app.services.ingestion.metadata import build_metadata
@@ -160,6 +161,48 @@ def test_cors_never_widens_to_every_origin():
 
 def test_origin_normalisation_strips_a_trailing_slash():
     assert normalize_origin("http://localhost:3000/") == "http://localhost:3000"
+
+
+# --- CORS origin suffixes -----------------------------------------------------
+def test_cors_suffix_regex_is_absent_when_unconfigured():
+    """Without a suffix the exact-match allow-list is the only rule."""
+    assert build_cors_origin_regex(Settings(environment="test")) is None
+
+
+def test_cors_suffix_matches_only_https_subdomains():
+    """Render serves every service from <service>.onrender.com, so a deployment can
+    accept its own frontend without the operator knowing the generated hostname."""
+    settings = Settings(environment="production", allowed_origin_suffixes=".onrender.com")
+    pattern = build_cors_origin_regex(settings)
+    assert pattern is not None
+
+    assert re.match(pattern, "https://niva-web.onrender.com")
+    assert re.match(pattern, "https://niva-api.onrender.com")
+
+
+@pytest.mark.parametrize(
+    "origin",
+    [
+        "https://niva-web.evil.com",  # different domain entirely
+        "https://niva-web.onrender.com.evil.com",  # suffix appears but is not the end
+        "http://niva-web.onrender.com",  # plaintext must not be accepted
+        "https://onrender.com",  # bare suffix is not a subdomain of itself
+        "https://niva-web.onrender.com:443",  # ports are not part of an Origin
+    ],
+)
+def test_cors_suffix_rejects_lookalike_origins(origin: str):
+    settings = Settings(environment="production", allowed_origin_suffixes="onrender.com")
+    pattern = build_cors_origin_regex(settings)
+    assert not re.match(pattern, origin)
+
+
+def test_cors_suffix_ignores_entries_that_are_not_hostname_suffixes():
+    """A scheme, path, port or wildcard in the config must not widen the match."""
+    created = Settings(
+        environment="production",
+        allowed_origin_suffixes="https://*.onrender.com,*evil,.example.com/../etc",
+    )
+    assert created.allowed_origin_suffix_list == []
 
 
 # --- Source integrity ---------------------------------------------------------
