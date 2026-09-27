@@ -43,7 +43,7 @@ async def list_schemes(services: ServiceContainer = Depends(get_services)) -> Sc
 
 @router.get("/indexed", response_model=SchemeListResponse, summary="List schemes present in the vector index")
 async def list_indexed_schemes(services: ServiceContainer = Depends(get_services)) -> SchemeListResponse:
-    """Schemes that actually have chunks in Chroma — used by the UI status badge."""
+    """Schemes that actually have chunks in Chroma, for an index-accurate count."""
     indexed = services.chroma.distinct("scheme_id")
     known = {s.id for s in services.registry.schemes()}
     return SchemeListResponse(
@@ -55,7 +55,7 @@ async def list_indexed_schemes(services: ServiceContainer = Depends(get_services
                 amc=scheme.amc,
                 categories=scheme.categories,
                 source_count=len(services.registry.sources_for_scheme(scheme.id)),
-                indexed=scheme.id in indexed_schemes,
+                indexed=scheme.id in indexed,
             )
             for scheme in services.registry.schemes()
             if scheme.id in indexed and scheme.id in known

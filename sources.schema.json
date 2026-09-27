@@ -1,0 +1,172 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://github.com/chetan7045/Next-Leap-Rag-Project/sources.schema.json",
+  "title": "HDFC Fund Facts source registry",
+  "description": "Schema for sources.json. Mirrors the pydantic models in backend/app/models/source.py and backend/app/models/retrieval.py, which are the authority at runtime. Unknown properties are ignored, so this file is an editor aid, not a validation gate.",
+  "type": "object",
+  "required": ["schemes", "sources"],
+  "additionalProperties": true,
+  "properties": {
+    "$schema": {
+      "type": "string"
+    },
+    "version": {
+      "type": "string",
+      "default": "1.0.0"
+    },
+    "description": {
+      "type": "string"
+    },
+    "amc": {
+      "type": "string",
+      "default": "HDFC Mutual Fund"
+    },
+    "sourceTypes": {
+      "description": "Human-readable provenance legend, keyed by SourceType.",
+      "type": "object",
+      "additionalProperties": {
+        "type": "string"
+      }
+    },
+    "schemes": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "$ref": "#/definitions/scheme"
+      }
+    },
+    "sources": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "$ref": "#/definitions/source"
+      }
+    }
+  },
+  "definitions": {
+    "scheme": {
+      "type": "object",
+      "required": ["id", "name", "amc"],
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "description": "Stable scheme key used across the API and Chroma metadata.",
+          "type": "string",
+          "pattern": "^[A-Z0-9_]+$"
+        },
+        "name": {
+          "type": "string",
+          "minLength": 1
+        },
+        "amc": {
+          "type": "string",
+          "minLength": 1
+        },
+        "plan": {
+          "type": "string",
+          "default": "Direct Growth"
+        },
+        "categories": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "aliases": {
+          "description": "Surface forms the scheme resolver matches on.",
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "source_ids": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "source": {
+      "type": "object",
+      "required": ["id", "scheme_id", "scheme_name", "url"],
+      "additionalProperties": true,
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "scheme_id": {
+          "description": "Must match a scheme id. The registry rejects unknown references.",
+          "type": "string",
+          "pattern": "^[A-Z0-9_]+$"
+        },
+        "scheme_name": {
+          "type": "string",
+          "minLength": 1
+        },
+        "amc": {
+          "type": "string",
+          "default": "HDFC Mutual Fund"
+        },
+        "url": {
+          "description": "Public page fetched by scripts/ingest.py. Must be unique across the file.",
+          "type": "string",
+          "format": "uri",
+          "pattern": "^https://"
+        },
+        "source_type": {
+          "description": "Provenance tier. Never inferred; always declared here.",
+          "type": "string",
+          "enum": ["AMC_OFFICIAL", "AMFI", "SEBI", "REFERENCE"],
+          "default": "REFERENCE"
+        },
+        "document_type": {
+          "type": "string",
+          "enum": [
+            "SCHEME_PAGE",
+            "FACTSHEET",
+            "SID",
+            "KIM",
+            "FAQ",
+            "TAX_GUIDE",
+            "STATEMENT_GUIDE",
+            "OTHER"
+          ],
+          "default": "SCHEME_PAGE"
+        },
+        "title": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "publisher": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "plan": {
+          "type": "string",
+          "default": "Direct Growth"
+        },
+        "loader": {
+          "type": "string",
+          "default": "static"
+        },
+        "enabled": {
+          "description": "Disabled sources stay in the file but are never fetched.",
+          "type": "boolean",
+          "default": true
+        },
+        "topics": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      }
+    }
+  }
+}

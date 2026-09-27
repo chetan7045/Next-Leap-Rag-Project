@@ -97,6 +97,35 @@ async def test_schemes_endpoint_lists_every_configured_scheme(client: AsyncClien
         assert isinstance(scheme["indexed"], bool)
 
 
+async def test_indexed_schemes_endpoint_returns_200(client: AsyncClient):
+    """Regression: this route referenced an undefined local and returned 500.
+
+    It is part of the public API, so any caller got a generic 500 instead of the
+    scheme list. The error handler hid the cause, which is how it survived.
+    """
+    response = await client.get("/api/v1/schemes/indexed")
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["count"] == len(body["schemes"])
+
+
+async def test_indexed_schemes_only_lists_schemes_present_in_the_index(
+    client: AsyncClient, seeded_chroma
+):
+    """The list is driven by the vector index, not by the registry alone."""
+    empty = (await client.get("/api/v1/schemes/indexed")).json()
+    assert empty["schemes"] == []
+    assert empty["count"] == 0
+
+    seeded_chroma({"HDFC_ELSS": ["Lock-in period is 3 years."]})
+
+    seeded = (await client.get("/api/v1/schemes/indexed")).json()
+    assert [scheme["id"] for scheme in seeded["schemes"]] == ["HDFC_ELSS"]
+    assert seeded["count"] == 1
+    assert seeded["schemes"][0]["indexed"] is True
+
+
 async def test_sources_endpoint_never_claims_official_provenance(client: AsyncClient):
     response = await client.get("/api/v1/sources")
 

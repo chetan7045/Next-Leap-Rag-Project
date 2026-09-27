@@ -124,12 +124,107 @@ grounded answers carry citations. Add `--json report.json` for a structured repo
 .venv/bin/python scripts/test_retrieval.py --top-k 5 "lock-in period of HDFC ELSS"
 ```
 
+## Deployment
+
+`render.yaml` in the repo root is a complete Render Blueprint. Both services run on
+the **free** plan (0.1 CPU, 512 MB RAM).
+
+### You only need to provide one secret
+
+Everything except the Gemini key is already committed — either as a plain value in
+`render.yaml` or as a default in `backend/app/core/config.py`.
+
+| What | Where it comes from | Manual? |
+| --- | --- | --- |
+| `GEMINI_API_KEY` | You, in the Render dashboard | **Yes — the only one** |
+| `NEXT_PUBLIC_API_BASE_URL` | `render.yaml` (`https://niva-api.onrender.com`) | No |
+| `ALLOWED_ORIGIN_SUFFIXES` | `render.yaml` (`.onrender.com`) | No |
+| Model, chunking, retrieval, CORS, cache paths, threads | `config.py` defaults + `render.yaml` | No |
+| Python / Node versions | `render.yaml` (`PYTHON_VERSION`, `NODE_VERSION`) | No |
+
+### Steps
+
+1. Push this repository to GitHub.
+2. In Render: **New → Blueprint**, select the repository, and apply. Render creates
+   both services and every environment variable except the key.
+3. Open the `niva-api` service → **Environment**, and add:
+   - Key: `GEMINI_API_KEY`
+   - Value: your key from <https://aistudio.google.com/apikey>
+4. Save. Render redeploys the API.
+5. Open `https://niva-web.onrender.com`.
+
+The first API boot downloads the embedding model and ingests the corpus, which takes
+roughly a minute. Because the free instance spins down after 15 minutes idle, the
+next request takes a few seconds while it wakes.
+
+### Service settings
+
+Both are defined in `render.yaml`; the values are listed here for reference.
+
+| | `niva-api` | `niva-web` |
+| --- | --- | --- |
+| Runtime | Python 3.12.7 | Node 24 |
+| Root directory | `backend` | `frontend` |
+| Plan | `free` | `free` |
+| Build command | `pip install --no-cache-dir -r requirements.txt` | `npm ci && npm run build` |
+| Start command | `python scripts/ingest.py && uvicorn app.main:app --host 0.0.0.0 --port $PORT` | `npm run start` |
+| Health check path | `/health` | `/` |
+
+If you would rather not use the Blueprint, those are the only values to enter when
+creating each service by hand.
+
+The `&&` in the API start command is deliberate. `scripts/ingest.py` exits non-zero
+when the corpus cannot be built. Chaining means a failed index is a failed boot,
+rather than a service that reports `status: "ok"` on `/health` while every chat
+reply says the index is empty.
+
+### Notes and limits of the free plan
+
+- **Memory is the tight constraint.** The embedder runs on ONNX Runtime rather than
+  PyTorch: importing torch alone costs about 750 MB RSS, more than the whole 512 MB
+  budget. The full stack peaks near 300 MB, which is what makes `free` viable. Note
+  that Render's `starter` plan is also 512 MB — it buys CPU, not RAM.
+- **The filesystem is ephemeral and there is no persistent disk.** The Chroma index
+  is written to `/tmp/chroma` and rebuilt by the start command on every cold start.
+  It must stay in `persistent` mode even so, because `ingest.py` and Uvicorn are
+  separate processes that hand the index over through the filesystem.
+- The corpus is fetched from the network at boot, so a failed upstream fetch fails
+  the boot rather than serving an empty index.
+- If you rename a service, update the other service's URL in `render.yaml`; the
+  hostname is derived from the service name.
+- `NEXT_PUBLIC_API_BASE_URL` is inlined into the client bundle at build time, so
+  changing it needs a rebuild, not just a restart.
+
+## Verifying a deployment
+
+```bash
+# API is up and the index built
+curl -s https://niva-api.onrender.com/health
+
+# retrieval + grounded generation through Gemini, with a real citation
+curl -s -X POST https://niva-api.onrender.com/api/v1/chat \
+  -H 'Content-Type: application/json' \
+  -d '{"message": "What is the exit load of HDFC ELSS Tax Saver Fund?"}'
+
+# guardrails: each of these returns a refusal, not an answer
+# "Should I invest in HDFC Large Cap Fund?"      -> ADVICE_REQUEST
+# "What will the NAV be 10 years from now?"       -> PERFORMANCE_PROMISE
+# "My PAN is ABCDE1234F"                          -> PII_DETECTED
+# "What is the weather in Mumbai?"                -> OUT_OF_SCOPE
+# "What is the exit load?"                        -> CLARIFICATION
+```
+
+`/health` returning `200` with `index_ready: true` and `llm.configured: true` is the
+signal that the whole boot chain — dependencies, embedding model, corpus fetch,
+index build, credential — succeeded.
+
 ## API
 
 | Method | Path | Purpose |
 | --- | --- | --- |
-| `GET` | `/health` | Service status, version, whether the index is ready |
+| `GET` | `/health` | Service status, version, whether the index is ready. Drives the UI status chip. |
 | `GET` | `/api/v1/schemes` | Known schemes, aliases, and whether each is indexed |
+| `GET` | `/api/v1/schemes/indexed` | Only the schemes that actually have chunks in the index |
 | `GET` | `/api/v1/sources` | Source provenance, dates, and indexed chunk counts |
 | `POST` | `/api/v1/chat` | Ask a question; returns a typed, cited answer |
 
@@ -162,74 +257,6 @@ All settings are environment variables with safe defaults (see
 other setting has a working default, so a local checkout runs with nothing but that
 key set.
 
-## Deployment (Render)
-
-`render.yaml` in the repo root is a complete Render Blueprint. Both services run on
-the **free** plan (0.1 CPU, 512 MB RAM).
-
-### You only need to provide one secret
-
-Everything except the Gemini key is already committed — either as a plain value in
-`render.yaml` or as a default in `backend/app/core/config.py`.
-
-| What | Where it comes from | Manual? |
-| --- | --- | --- |
-| `GEMINI_API_KEY` | You, in the Render dashboard | **Yes — the only one** |
-| `NEXT_PUBLIC_API_BASE_URL` | `render.yaml` (`https://niva-api.onrender.com`) | No |
-| `ALLOWED_ORIGIN_SUFFIXES` | `render.yaml` (`.onrender.com`) | No |
-| Model, chunking, retrieval, CORS, cache paths, threads | `config.py` defaults + `render.yaml` | No |
-
-### Steps
-
-1. Push this repository to GitHub.
-2. In Render: **New → Blueprint**, select the repository, and apply. Render creates
-   both services and every environment variable except the key.
-3. Open the `niva-api` service → **Environment**, and add:
-   - Key: `GEMINI_API_KEY`
-   - Value: your key from <https://aistudio.google.com/apikey>
-4. Save. Render redeploys the API, which triggers a frontend rebuild through the
-   Blueprint.
-5. Open `https://niva-web.onrender.com`.
-
-The first API boot downloads the embedding model and ingests the corpus, which takes
-roughly a minute. Because the free instance spins down after 15 minutes idle, the
-next request takes a few seconds while it wakes.
-
-### Service settings
-
-Both are defined in `render.yaml`; the values are listed here for reference.
-
-| | `niva-api` | `niva-web` |
-| --- | --- | --- |
-| Runtime | Python | Node |
-| Root directory | `backend` | `frontend` |
-| Plan | `free` | `free` |
-| Build command | `pip install --no-cache-dir -r requirements.txt` | `npm ci && npm run build` |
-| Start command | `python scripts/ingest.py && uvicorn app.main:app --host 0.0.0.0 --port $PORT` | `npm run start` |
-| Health check path | `/health` | `/` |
-
-The `&&` in the API start command is deliberate. `scripts/ingest.py` exits non-zero
-when the corpus cannot be built. Chaining means a failed index is a failed boot,
-rather than a service that reports `status: "ok"` on `/health` while every chat
-reply says the index is empty.
-
-### Notes and limits of the free plan
-
-- **Memory is the tight constraint.** The embedder runs on ONNX Runtime rather than
-  PyTorch: importing torch alone costs about 750 MB RSS, more than the whole 512 MB
-  budget. The full stack peaks near 300 MB, which is what makes `free` viable. Note
-  that Render's `starter` plan is also 512 MB — it buys CPU, not RAM.
-- **The filesystem is ephemeral and there is no persistent disk.** The Chroma index
-  is written to `/tmp/chroma` and rebuilt by the start command on every cold start.
-  It must stay in `persistent` mode even so, because `ingest.py` and Uvicorn are
-  separate processes that hand the index over through the filesystem.
-- The corpus is fetched from the network at boot, so a failed upstream fetch fails
-  the boot rather than serving an empty index.
-- If you rename a service, update the other service's URL in `render.yaml`; the
-  hostname is derived from the service name.
-- `NEXT_PUBLIC_API_BASE_URL` is inlined into the client bundle at build time, so
-  changing it needs a rebuild, not just a restart.
-
 ## Project layout
 
 ```
@@ -248,7 +275,9 @@ backend/
   tests/               hermetic unit and API tests
 evaluation/            questions.json
 frontend/              Next.js app (Niva UI, src/components/niva)
-sources.json           source registry
+render.yaml            Render Blueprint for both services
+sources.json           source registry (the only place source URLs are defined)
+sources.schema.json    JSON Schema for sources.json, referenced by its $schema key
 ```
 
 ## Limitations
