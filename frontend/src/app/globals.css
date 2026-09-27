@@ -1,0 +1,224 @@
+@import "tailwindcss";
+
+/* ==========================================================================
+   Niva design tokens
+   One source of truth for colour, radius, elevation and motion.
+   Components must not introduce raw hex values.
+   ========================================================================== */
+@theme {
+  /* --- Typography ------------------------------------------------------ */
+  --font-sans: var(--font-inter), ui-sans-serif, system-ui, -apple-system,
+    BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+
+  /* --- Brand accent (refined blue) ------------------------------------- */
+  --color-niva-50: #f5f8ff;
+  --color-niva-100: #e9f0fe;
+  --color-niva-200: #d0e1fd;
+  --color-niva-300: #a9c9fb;
+  --color-niva-400: #71a4f7;
+  --color-niva-500: #3b82f6;
+  --color-niva-600: #2563eb;
+  --color-niva-700: #1d4ed8;
+
+  /* --- Ink (deep navy) -------------------------------------------------- */
+  --color-ink-900: #0b1220;
+  --color-ink-800: #16203a;
+  --color-ink-700: #233350;
+
+  /* --- Muted secondary text (all steps pass WCAG AA on white) ---------- */
+  --color-muted-600: #55637a; /* 6.08:1 — body secondary */
+  --color-muted-500: #5d6b81; /* 5.40:1 — secondary metadata */
+  --color-muted-400: #6b7789; /* 4.54:1 — small metadata */
+  --color-muted-300: #7d8899; /* decorative only, not body text */
+
+  /* --- Lines / canvas --------------------------------------------------- */
+  --color-line-300: #d8e0ec;
+  --color-line-200: #e5ebf3;
+  --color-line-100: #eff3f8;
+  --color-canvas: #ffffff;
+  --color-canvas-soft: #fafbfd;
+
+  /* --- Status ----------------------------------------------------------- */
+  --color-good-700: #047857;
+  --color-good-600: #059669;
+  --color-good-500: #10b981;
+  --color-good-200: #b9eed6;
+  --color-good-50: #ecfdf5;
+  --color-bad-600: #dc2626;
+  --color-bad-200: #f7c9c9;
+  --color-bad-50: #fef2f2;
+
+  /* --- Radius ----------------------------------------------------------- */
+  --radius-chip: 0.875rem; /* 14px — prompt cards */
+  --radius-bubble: 1.125rem; /* 18px — message bubble */
+  --radius-composer: 1.375rem; /* 22px — composer */
+  --radius-source: 0.75rem; /* 12px — source citation */
+
+  /* --- Elevation (extremely subtle) ------------------------------------ */
+  --shadow-xs: 0 1px 2px rgb(11 18 32 / 0.04);
+  --shadow-soft: 0 1px 3px rgb(11 18 32 / 0.05), 0 1px 2px rgb(11 18 32 / 0.03);
+  --shadow-card: 0 4px 20px rgb(11 18 32 / 0.05);
+  --shadow-float: 0 10px 34px rgb(11 18 32 / 0.09);
+  --shadow-composer: 0 6px 28px rgb(11 18 32 / 0.07),
+    0 1px 3px rgb(11 18 32 / 0.04);
+
+  /* --- Motion ----------------------------------------------------------- */
+  --ease-niva: cubic-bezier(0.22, 1, 0.36, 1);
+  --ease-niva-out: cubic-bezier(0.16, 1, 0.3, 1);
+
+  --animate-niva-rise: niva-rise 260ms var(--ease-niva) both;
+  --animate-niva-rise-soft: niva-rise-soft 300ms var(--ease-niva) both;
+  --animate-niva-fade: niva-fade 260ms var(--ease-niva) both;
+  --animate-niva-hero-in: niva-hero-in 520ms var(--ease-niva-out) both;
+  --animate-niva-hero-out: niva-hero-out 200ms var(--ease-niva) both;
+  --animate-niva-dot: niva-dot 1.25s var(--ease-niva) infinite;
+  --animate-niva-halo: niva-halo 11s ease-in-out infinite;
+  --animate-niva-mark: niva-mark 8s ease-in-out infinite;
+}
+
+@keyframes niva-rise {
+  from {
+    opacity: 0;
+    transform: translate3d(0, 6px, 0);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@keyframes niva-rise-soft {
+  from {
+    opacity: 0;
+    transform: translate3d(0, 8px, 0);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@keyframes niva-fade {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes niva-hero-in {
+  from {
+    opacity: 0;
+    transform: translate3d(0, 10px, 0);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@keyframes niva-hero-out {
+  from {
+    opacity: 1;
+    transform: none;
+  }
+  to {
+    opacity: 0;
+    transform: translate3d(0, -10px, 0);
+  }
+}
+
+@keyframes niva-dot {
+  0%,
+  64%,
+  100% {
+    opacity: 0.28;
+    transform: translateY(0);
+  }
+  32% {
+    opacity: 1;
+    transform: translateY(-3px);
+  }
+}
+
+@keyframes niva-halo {
+  0%,
+  100% {
+    opacity: 0.7;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 1;
+    transform: scale(1.07);
+  }
+}
+
+@keyframes niva-mark {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.7;
+  }
+}
+
+@layer base {
+  :root {
+    /* The product is intentionally light-only. */
+    color-scheme: light;
+  }
+
+  html {
+    -webkit-text-size-adjust: 100%;
+  }
+
+  body {
+    background-color: var(--color-canvas);
+    color: var(--color-ink-900);
+    font-family: var(--font-sans);
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    text-rendering: optimizeLegibility;
+  }
+
+  ::selection {
+    background-color: var(--color-niva-100);
+    color: var(--color-ink-900);
+  }
+
+  :focus-visible {
+    outline: 2px solid var(--color-niva-600);
+    outline-offset: 2px;
+  }
+}
+
+/* Conversation scroller: thin, unobtrusive, light-theme friendly. */
+.niva-scroll {
+  scrollbar-width: thin;
+  scrollbar-color: var(--color-line-300) transparent;
+}
+.niva-scroll::-webkit-scrollbar {
+  width: 8px;
+}
+.niva-scroll::-webkit-scrollbar-track {
+  background: transparent;
+}
+.niva-scroll::-webkit-scrollbar-thumb {
+  background-color: var(--color-line-300);
+  background-clip: content-box;
+  border: 2px solid transparent;
+  border-radius: 999px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}

@@ -1,0 +1,95 @@
+# Render blueprint for Niva — facts-only RAG assistant for HDFC mutual funds.
+#
+# Two web services: the browser talks to the API directly, so the API and the UI are
+# deployed separately and the API's CORS allow-list names the UI's public origin.
+#
+# Both services are on the `free` compute plan: 512 MB RAM and 0.1 CPU.
+#   * Memory is the binding constraint. The embedder runs on ONNX Runtime, not
+#     PyTorch, because importing torch alone costs ~750 MB RSS. Measured peak for the
+#     full stack (FastAPI + Chroma + MiniLM) is ~266 MB, which leaves real headroom.
+#   * Free instances spin down after 15 minutes idle and the filesystem is ephemeral.
+#     Nothing is assumed to persist: the index is rebuilt on every cold start.
+#
+# Render has no persistent disks on Free, so the Chroma index lives in /tmp and is
+# rebuilt by scripts/ingest.py at every boot. The ingest step must stay in
+# startCommand: it is a separate process from uvicorn, so the index has to be written
+# to disk to be picked up. Set AUTO_INGEST_ON_STARTUP=false to avoid doing it twice.
+
+services:
+  - type: web
+    name: niva-api
+    runtime: python
+    plan: free
+    rootDir: backend
+    buildCommand: |
+      pip install --no-cache-dir -r requirements.txt
+    # `&&` is load-bearing. scripts/ingest.py exits non-zero when the corpus cannot be
+    # built (a source fetch failed, or nothing was indexed). Without chaining, the
+    # shell would start uvicorn anyway, /health would still return 200 with
+    # status="ok", and every chat request would answer "the source index is empty" —
+    # a healthy-looking service that answers nothing. Chaining makes a failed index
+    # a failed boot.
+    startCommand: |
+      python scripts/ingest.py && uvicorn app.main:app --host 0.0.0.0 --port $PORT
+    healthCheckPath: /health
+    autoDeploy: false
+    envVars:
+      - key: PYTHON_VERSION
+        value: "3.12.7"
+      - key: ENVIRONMENT
+        value: production
+      - key: SERVICE_NAME
+        value: niva-api
+      # The index is rebuilt on every cold start, so this is a scratch directory, not
+      # a store. It must be persistent-mode: ingest.py and uvicorn are separate
+      # processes and share the index through the filesystem.
+      - key: CHROMA_MODE
+        value: persistent
+      - key: CHROMA_PERSIST_DIRECTORY
+        value: /tmp/chroma
+      - key: AUTO_INGEST_ON_STARTUP
+        value: "false"
+      # Embedding weights are fetched on first boot. Caching under /tmp avoids
+      # re-downloading on every restart within the same container lifetime.
+      - key: FASTEMBED_CACHE_PATH
+        value: /tmp/fastembed_cache
+      # One ONNX thread: the instance has 0.1 CPU, so extra threads only add
+      # scheduling overhead and memory.
+      - key: EMBEDDING_THREADS
+        value: "1"
+      - key: OMP_NUM_THREADS
+        value: "1"
+      - key: ENABLE_DOCS
+        value: "false"
+      - key: DEBUG_RAG
+        value: "false"
+      - key: LOG_LEVEL
+        value: INFO
+      - key: LLM_PROVIDER
+        value: gemini
+      - key: LLM_MODEL
+        value: gemini-3.8-flash
+      # Must be the deployed frontend origin, e.g. https://niva-web.onrender.com
+      - key: ALLOWED_ORIGINS
+        sync: false
+      - key: GEMINI_API_KEY
+        sync: false
+
+  - type: web
+    name: niva-web
+    runtime: node
+    plan: free
+    rootDir: frontend
+    buildCommand: npm ci && npm run build
+    startCommand: npm run start
+    healthCheckPath: /
+    autoDeploy: false
+    envVars:
+      - key: NODE_VERSION
+        value: "24"
+      # Must match the API's public URL, and the API's ALLOWED_ORIGINS must match
+      # this service's public URL. Set both before the first build: Next.js inlines
+      # NEXT_PUBLIC_* into the client bundle at build time, so changing it later
+      # requires a rebuild, not just a restart.
+      - key: NEXT_PUBLIC_API_BASE_URL
+        sync: false

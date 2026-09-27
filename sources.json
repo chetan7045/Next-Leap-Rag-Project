@@ -1,0 +1,222 @@
+{
+  "$schema": "./sources.schema.json",
+  "version": "1.0.0",
+  "description": "Public-source registry for the HDFC Fund Facts corpus. Adding a source or scheme here requires no change to the ingestion, retrieval, or API layers. source_type encodes provenance: AMC_OFFICIAL > AMFI/SEBI > REFERENCE. A REFERENCE page is never presented as an official HDFC Mutual Fund source.",
+  "amc": "HDFC Mutual Fund",
+  "sourceTypes": {
+    "AMC_OFFICIAL": "Published by HDFC Mutual Fund itself (hdfcmf.com). Authority level 1.",
+    "AMFI": "Published by the Association of Mutual Funds of India (amfiindia.com). Authority level 2.",
+    "SEBI": "Published by the Securities and Exchange Board of India (sebi.gov.in). Authority level 2.",
+    "REFERENCE": "Third-party public aggregator. Factually useful but not authoritative. Authority level 3."
+  },
+  "schemes": [
+    {
+      "id": "HDFC_LARGE_CAP",
+      "name": "HDFC Large Cap Fund",
+      "amc": "HDFC Mutual Fund",
+      "plan": "Direct Growth",
+      "aliases": [
+        "large cap",
+        "largecap",
+        "large cap fund",
+        "hdfc large cap",
+        "hdfc largecap",
+        "large cap fund direct growth"
+      ],
+      "categories": ["Large cap"]
+    },
+    {
+      "id": "HDFC_FLEXI_CAP",
+      "name": "HDFC Flexi Cap Fund",
+      "amc": "HDFC Mutual Fund",
+      "plan": "Direct Growth",
+      "aliases": [
+        "flexi cap",
+        "flexicap",
+        "flexi cap fund",
+        "hdfc flexi cap",
+        "equity fund",
+        "hdfc equity fund",
+        "hdfc equity",
+        "formerly equity fund"
+      ],
+      "categories": ["Flexi cap"]
+    },
+    {
+      "id": "HDFC_ELSS",
+      "name": "HDFC ELSS Tax Saver Fund",
+      "amc": "HDFC Mutual Fund",
+      "plan": "Direct Growth",
+      "aliases": [
+        "elss",
+        "tax saver",
+        "tax saver fund",
+        "elss tax saver",
+        "elss tax saver fund",
+        "hdfc elss",
+        "80c",
+        "80c fund",
+        "section 80c"
+      ],
+      "categories": ["ELSS", "Tax saver"]
+    },
+    {
+      "id": "HDFC_SMALL_CAP",
+      "name": "HDFC Small Cap Fund",
+      "amc": "HDFC Mutual Fund",
+      "plan": "Direct Growth",
+      "aliases": [
+        "small cap",
+        "smallcap",
+        "small cap fund",
+        "hdfc small cap",
+        "hdfc smallcap"
+      ],
+      "categories": ["Small cap"]
+    },
+    {
+      "id": "HDFC_BALANCED_ADVANTAGE",
+      "name": "HDFC Balanced Advantage Fund",
+      "amc": "HDFC Mutual Fund",
+      "plan": "Direct Growth",
+      "aliases": [
+        "balanced advantage",
+        "balanced advantage fund",
+        "hdfc balanced advantage",
+        "balanced fund",
+        "hdfc balanced",
+        "advantage fund"
+      ],
+      "categories": ["Hybrid", "Equity oriented hybrid"]
+    }
+  ],
+  "sources": [
+    {
+      "id": "hdfc-large-cap-scheme-page",
+      "amc": "HDFC Mutual Fund",
+      "scheme_id": "HDFC_LARGE_CAP",
+      "scheme_name": "HDFC Large Cap Fund",
+      "plan": "Direct Growth",
+      "url": "https://groww.in/mutual-funds/hdfc-large-cap-fund-direct-growth",
+      "source_type": "REFERENCE",
+      "publisher": "Groww",
+      "document_type": "SCHEME_PAGE",
+      "loader": "static",
+      "enabled": true,
+      "topics": [
+        "scheme_overview",
+        "expense_ratio",
+        "exit_load",
+        "minimum_investment",
+        "minimum_sip",
+        "benchmark",
+        "riskometer",
+        "tax",
+        "fund_manager",
+        "nav_aum"
+      ]
+    },
+    {
+      "id": "hdfc-flexi-cap-scheme-page",
+      "amc": "HDFC Mutual Fund",
+      "scheme_id": "HDFC_FLEXI_CAP",
+      "scheme_name": "HDFC Flexi Cap Fund",
+      "plan": "Direct Growth",
+      "url": "https://groww.in/mutual-funds/hdfc-equity-fund-direct-growth",
+      "source_type": "REFERENCE",
+      "publisher": "Groww",
+      "document_type": "SCHEME_PAGE",
+      "loader": "static",
+      "enabled": true,
+      "topics": [
+        "scheme_overview",
+        "expense_ratio",
+        "exit_load",
+        "minimum_investment",
+        "minimum_sip",
+        "benchmark",
+        "riskometer",
+        "tax",
+        "fund_manager",
+        "nav_aum"
+      ]
+    },
+    {
+      "id": "hdfc-elss-scheme-page",
+      "amc": "HDFC Mutual Fund",
+      "scheme_id": "HDFC_ELSS",
+      "scheme_name": "HDFC ELSS Tax Saver Fund",
+      "plan": "Direct Growth",
+      "url": "https://groww.in/mutual-funds/hdfc-elss-tax-saver-fund-direct-plan-growth",
+      "source_type": "REFERENCE",
+      "publisher": "Groww",
+      "document_type": "SCHEME_PAGE",
+      "loader": "static",
+      "enabled": true,
+      "topics": [
+        "scheme_overview",
+        "expense_ratio",
+        "exit_load",
+        "lock_in_period",
+        "minimum_investment",
+        "minimum_sip",
+        "benchmark",
+        "riskometer",
+        "tax",
+        "fund_manager",
+        "nav_aum"
+      ]
+    },
+    {
+      "id": "hdfc-small-cap-scheme-page",
+      "amc": "HDFC Mutual Fund",
+      "scheme_id": "HDFC_SMALL_CAP",
+      "scheme_name": "HDFC Small Cap Fund",
+      "plan": "Direct Growth",
+      "url": "https://groww.in/mutual-funds/hdfc-small-cap-fund-direct-growth",
+      "source_type": "REFERENCE",
+      "publisher": "Groww",
+      "document_type": "SCHEME_PAGE",
+      "loader": "static",
+      "enabled": true,
+      "topics": [
+        "scheme_overview",
+        "expense_ratio",
+        "exit_load",
+        "minimum_investment",
+        "minimum_sip",
+        "benchmark",
+        "riskometer",
+        "tax",
+        "fund_manager",
+        "nav_aum"
+      ]
+    },
+    {
+      "id": "hdfc-balanced-advantage-scheme-page",
+      "amc": "HDFC Mutual Fund",
+      "scheme_id": "HDFC_BALANCED_ADVANTAGE",
+      "scheme_name": "HDFC Balanced Advantage Fund",
+      "plan": "Direct Growth",
+      "url": "https://groww.in/mutual-funds/hdfc-balanced-advantage-fund-direct-growth",
+      "source_type": "REFERENCE",
+      "publisher": "Groww",
+      "document_type": "SCHEME_PAGE",
+      "loader": "static",
+      "enabled": true,
+      "topics": [
+        "scheme_overview",
+        "expense_ratio",
+        "exit_load",
+        "minimum_investment",
+        "minimum_sip",
+        "benchmark",
+        "riskometer",
+        "tax",
+        "asset_allocation",
+        "fund_manager",
+        "nav_aum"
+      ]
+    }
+  ]
+}

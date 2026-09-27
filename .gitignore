@@ -1,0 +1,43 @@
+# --- Secrets: never commit these ---------------------------------------------
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+secrets/
+
+# --- Python -------------------------------------------------------------------
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# --- Ingested data and model caches (regenerate with scripts/ingest.py) --------
+backend/data/
+backend/.cache/
+
+# --- Node ---------------------------------------------------------------------
+node_modules/
+.next/
+out/
+build/
+.turbo/
+npm-debug.log*
+yarn-error.log*
+.pnpm-store/
+*.tsbuildinfo
+
+# --- Editors and OS -----------------------------------------------------------
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# --- Deployment ---------------------------------------------------------------
+.render/
