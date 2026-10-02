@@ -42,8 +42,12 @@ services:
       - key: SERVICE_NAME
         value: niva-api
       # The index is rebuilt on every cold start, so this is a scratch directory, not
-      # a store. It must be persistent-mode: ingest.py and uvicorn are separate
-      # processes and share the index through the filesystem.
+      # a store. It must stay in `persistent` mode even so, because ingest.py and
+      # uvicorn are separate processes that share the index through the filesystem.
+      # "persistent" here means Chroma writes to disk instead of holding the index
+      # in RAM; it does NOT mean durable across a restart. Render Free has no
+      # persistent disk, so the index is empty on every cold start and is rebuilt by
+      # the start command.
       - key: CHROMA_MODE
         value: persistent
       - key: CHROMA_PERSIST_DIRECTORY
@@ -59,6 +63,28 @@ services:
       - key: EMBEDDING_THREADS
         value: "1"
       - key: OMP_NUM_THREADS
+        value: "1"
+      # ONNX Runtime's CPU memory arena grows to the largest activation it has ever
+      # seen and never returns it to the OS, so with it enabled peak RSS was set by
+      # the biggest embedding batch rather than by the corpus (77 chunks x 384 dims
+      # is under 1 MB of vectors). Measured peak of the real ingest run on the full
+      # corpus: 451 MB with the arena on and batch 32, 347 MB with it off and batch 4.
+      # Disabling it also runs ~35% faster at this corpus size, so there is no
+      # throughput cost to paying for the lower peak.
+      - key: EMBEDDING_ENABLE_CPU_MEM_ARENA
+        value: "false"
+      # Chunks per forward pass. Smaller batches bound the activation peak; 4 was the
+      # measured sweet spot (399 MB at 8, 347 MB at 4, 339 MB at 2) and was faster
+      # than 8 as well.
+      - key: EMBEDDING_BATCH_SIZE
+        value: "4"
+      # Single uvicorn worker. Each worker would load its own ~87 MB of ONNX weights
+      # and its own Chroma client, which does not fit the 512 MB budget.
+      - key: WEB_CONCURRENCY
+        value: "1"
+      # Unbuffered stdout/stderr so the boot log (including a memory failure) is not
+      # lost when the container is killed.
+      - key: PYTHONUNBUFFERED
         value: "1"
       - key: ENABLE_DOCS
         value: "false"

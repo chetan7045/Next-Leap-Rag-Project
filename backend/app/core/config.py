@@ -50,10 +50,41 @@ class Settings(BaseSettings):
     # Runs on ONNX Runtime via fastembed. Keep 1 thread on small shared-CPU hosts
     # such as Render Free (0.1 CPU): extra ONNX threads only add scheduler overhead.
     embedding_model: str = "sentence-transformers/all-MiniLM-L6-v2"
-    embedding_batch_size: int = 32
     embedding_threads: int = Field(default=1, ge=1, le=32)
 
+    # ONNX Runtime's CPU memory arena is the dominant term in this process's RSS.
+    # It grows to the largest activation it has ever seen and never returns the
+    # memory to the OS, so the cost is set by the biggest batch rather than by the
+    # corpus (77 chunks, 384 dims) — the vectors themselves are under 1 MB.
+    # Measured peak RSS of the full 77-chunk corpus, threads=1:
+    #     arena on,  batch 32 -> 451 MB      arena off, batch 32 -> 353 MB
+    #     arena on,  batch  8 -> 301 MB      arena off, batch  8 -> 275 MB
+    #     arena on,  batch  1 -> 255 MB      arena off, batch  1 -> 254 MB
+    # With the arena disabled the same work is also *faster* (9.2s vs 14.2s for the
+    # full corpus), because the arena's grow-and-copy bookkeeping costs more than
+    # plain malloc/free at this corpus size. Leaving it off keeps peak memory bounded
+    # by a single forward pass instead of by the history of every batch ever run.
+    embedding_enable_cpu_mem_arena: bool = False
+    # Chunks per forward pass. Kept small so peak activation memory stays bounded on
+    # a 512 MB host. Measured peak of the full real ingest run (arena off):
+    #     batch 8 -> 399 MB      batch 4 -> 347 MB      batch 2 -> 339 MB
+    # 4 is the measured sweet spot: below 4 the gain is marginal, and 4 was also
+    # faster than 8 (19s vs 31s), so the smaller batch costs nothing here.
+    embedding_batch_size: int = Field(default=4, ge=1, le=256)
+    # Where fastembed stores the downloaded ONNX weights. Empty means "library
+    # default". Previously render.yaml set FASTEMBED_CACHE_PATH but no field read it,
+    # so the variable was silently dropped by ``extra="ignore"`` and the model was
+    # cached wherever fastembed chose. On Render the weights land in the source tree
+    # instead of a scratch dir.
+    fastembed_cache_path: str = ""
+
     # --- Vector store -----------------------------------------------------
+    # NOTE: "persistent" here means persistent-mode Chroma, *not* durable storage.
+    # Chroma keeps its files on the local filesystem and only reloads them if that
+    # filesystem outlives the process. On Render Free the filesystem is ephemeral, so
+    # the index is empty on every cold start and must be rebuilt at boot. Point this
+    # at a scratch dir (/tmp/chroma) rather than the source tree: /tmp is guaranteed
+    # writable and is not part of the deployed artifact.
     chroma_mode: Literal["persistent", "ephemeral"] = "persistent"
     chroma_persist_directory: str = "./data/chroma"
     chroma_collection: str = "hdfc_mutual_fund_faq"
@@ -220,6 +251,17 @@ class Settings(BaseSettings):
                 warnings.append("ALLOWED_ORIGINS contains '*'. Wildcard CORS is not allowed in production.")
             elif origins == ["http://localhost:3000"]:
                 warnings.append("ALLOWED_ORIGINS still points at localhost. Set the deployed frontend origin.")
+            chroma_path = self.chroma_path
+            if chroma_path is not None and BACKEND_DIR in chroma_path.parents:
+                warnings.append(
+                    f"CHROMA_PERSIST_DIRECTORY is inside the deployed source tree ({chroma_path}). "
+                    "Use a scratch dir such as /tmp/chroma."
+                )
+            if self.embedding_batch_size > 32:
+                warnings.append(
+                    f"EMBEDDING_BATCH_SIZE={self.embedding_batch_size} raises peak RSS sharply on a "
+                    "512 MB host; 4 is the measured sweet spot."
+                )
         return warnings
 
 

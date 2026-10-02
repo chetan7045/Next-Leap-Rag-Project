@@ -153,9 +153,10 @@ Everything except the Gemini key is already committed — either as a plain valu
 4. Save. Render redeploys the API.
 5. Open `https://niva-web.onrender.com`.
 
-The first API boot downloads the embedding model and ingests the corpus, which takes
-roughly a minute. Because the free instance spins down after 15 minutes idle, the
-next request takes a few seconds while it wakes.
+The first API boot downloads the embedding model (~87 MB) and ingests the corpus by
+fetching all five source pages, which takes roughly a minute on a normal machine and
+noticeably longer on the 0.1 CPU free tier. Because the free instance spins down after
+15 minutes idle, the next request pays that cost again while it wakes.
 
 ### Service settings
 
@@ -180,14 +181,41 @@ reply says the index is empty.
 
 ### Notes and limits of the free plan
 
-- **Memory is the tight constraint.** The embedder runs on ONNX Runtime rather than
-  PyTorch: importing torch alone costs about 750 MB RSS, more than the whole 512 MB
-  budget. The full stack peaks near 300 MB, which is what makes `free` viable. Note
-  that Render's `starter` plan is also 512 MB — it buys CPU, not RAM.
+- **Memory is the tight constraint.** Two things dominate it, and both were measured
+  rather than guessed.
+  - *PyTorch is not installed at all.* Importing it costs roughly 750 MB RSS on its
+    own — more than the entire budget. The embedder runs on ONNX Runtime instead.
+  - *ONNX Runtime's CPU memory arena is the second-largest term.* It grows to the
+    largest activation it has ever seen and never returns that memory to the OS, so
+    peak RSS is set by the **biggest embedding batch**, not by the size of the corpus.
+    The corpus itself is trivial: 77 chunks x 384 dims is under 1 MB of vectors.
+    Measured peak RSS for a full ingest of the real corpus, 1 thread:
+
+    | arena | batch 32 | batch 8 | batch 4 | batch 1 |
+    | --- | --- | --- | --- | --- |
+    | on | 451 MB | 301 MB | — | 255 MB |
+    | **off** | 353 MB | 275 MB | **257 MB** | 254 MB |
+
+    So `EMBEDDING_ENABLE_CPU_MEM_ARENA=false` and `EMBEDDING_BATCH_SIZE=4` are the
+    defaults. Disabling the arena is also *faster* at this corpus size (9.2s vs 14.2s
+    for the full embed), because the arena's grow-and-copy bookkeeping costs more than
+    plain `malloc`/`free` when there are only 77 chunks.
+
+  End-to-end on the real `ingest.py` run: **417 MB peak before, 347 MB after.**
+  The serving process settles at **302 MB steady / 313 MB peak**, and does not grow
+  across queries (+3 MB over 30 sequential requests, none of it reclaimable, so it is
+  allocator high-water rather than a leak).
+
+  These are local measurements taken with `/proc/self/status` `VmHWM` on Linux
+  x86-64, Python 3.14. Render runs Python 3.12.7 and its accounting includes page
+  cache, so treat them as indicative rather than a guarantee. The headroom is real
+  but it is not infinite — see *Remaining risks* below.
+
 - **The filesystem is ephemeral and there is no persistent disk.** The Chroma index
   is written to `/tmp/chroma` and rebuilt by the start command on every cold start.
   It must stay in `persistent` mode even so, because `ingest.py` and Uvicorn are
-  separate processes that hand the index over through the filesystem.
+  separate processes that hand the index over through the filesystem. "Persistent"
+  here describes how Chroma stores data, not durability across a restart.
 - The corpus is fetched from the network at boot, so a failed upstream fetch fails
   the boot rather than serving an empty index.
 - If you rename a service, update the other service's URL in `render.yaml`; the
@@ -246,10 +274,14 @@ All settings are environment variables with safe defaults (see
 | `LLM_MODEL` | `gemini-3.8-flash` | |
 | `TOP_K` | `5` | Chunks passed to the model |
 | `SIMILARITY_THRESHOLD` | `0.45` | Below this the answer is `NO_CONTEXT` |
+| `EMBEDDING_ENABLE_CPU_MEM_ARENA` | `false` | ONNX Runtime's caching arena. It never returns memory to the OS, so leaving it on makes peak RSS depend on the largest batch ever run rather than on one forward pass. Turning it off also runs faster at this corpus size. |
+| `EMBEDDING_BATCH_SIZE` | `4` | Chunks per forward pass during ingestion. Directly sets peak activation memory — 32 measured 451 MB, 4 measured 257 MB. |
+| `FASTEMBED_CACHE_PATH` | _(empty)_ | Where the downloaded ONNX weights are cached. Set it to a scratch dir on Render. |
 | `CHROMA_MODE` | `persistent` | `ephemeral` for tests |
+| `CHROMA_PERSIST_DIRECTORY` | `./data/chroma` | Relative paths resolve against `backend/`. On Render use `/tmp/chroma`; the default would write into the deployed source tree. |
+| `WEB_CONCURRENCY` | `1` | Uvicorn workers. Each extra worker loads its own ~87 MB of ONNX weights and its own Chroma client. |
 | `ALLOWED_ORIGINS` | `http://localhost:3000` | Comma-separated CORS origins |
 | `ALLOWED_ORIGIN_SUFFIXES` | _(empty)_ | Comma-separated https-only hostname suffixes, e.g. `.onrender.com`. Set on Render so the deployment accepts its own frontend without a manual value. Not a credential. |
-| `EMBEDDING_THREADS` | `1` | ONNX threads; keep at 1 on 0.1-CPU hosts |
 | `AUTO_INGEST_ON_STARTUP` | `false` | Render ingests in the start command instead |
 | `DEBUG_RAG` | `false` | Populates the `retrieval` diagnostic field |
 
@@ -288,3 +320,17 @@ sources.schema.json    JSON Schema for sources.json, referenced by its $schema k
   documents. Verify anything important against the AMC, AMFI, or SEBI.
 - The assistant deliberately cannot rank funds, predict returns, or give
   recommendations.
+- **The memory budget has real but finite headroom.** Serving sits near 302 MB and
+  ingestion peaks near 347 MB against a 512 MB ceiling. The measurements above were
+  taken on Python 3.14 locally; Render runs 3.12.7 and counts page cache toward the
+  limit, so the two numbers are not directly comparable. Raising
+  `EMBEDDING_BATCH_SIZE`, re-enabling the ONNX arena, adding a Uvicorn worker, or
+  adding a dependency with a heavy transitive import will each push it back over.
+- **Ingestion is the fragile part of a cold start.** It runs before Uvicorn binds a
+  port, so it must fetch all five source pages successfully or the boot fails. That
+  is deliberate — a loud failure beats a service that reports healthy and answers
+  nothing — but it does mean a Groww outage or a schema change takes the API down
+  until ingestion succeeds. The corpus is small enough to pre-build an index and
+  serve it read-only if that trade-off ever becomes worth making.
+- On 0.1 CPU the boot-time ingest is the slowest part of the deploy; the first
+  request after a spin-down waits for it.

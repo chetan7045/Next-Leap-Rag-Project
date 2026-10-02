@@ -8,7 +8,11 @@ tokenizer, pooling and L2 normalisation are the same ones ``sentence-transformer
 would load, so the vector space is unchanged and an existing Chroma index stays
 valid. The reason for the swap is memory: importing PyTorch costs roughly 750 MB RSS
 before any weights are read, which exceeds the 512 MB available on a Render Free (or
-Starter) instance. The ONNX path peaks near 265 MB.
+Starter) instance.
+
+The second-largest term is ONNX Runtime's own CPU memory arena, which is why
+``embedding_enable_cpu_mem_arena`` defaults to ``False`` and ``embedding_batch_size``
+to 4 — see ``Settings`` for the measured numbers.
 """
 
 from __future__ import annotations
@@ -84,10 +88,18 @@ class EmbeddingService:
                 ) from exc
             logger.info("Loading embedding model %s (ONNX)", self.model_name)
             try:
-                model = TextEmbedding(
-                    self.model_name,
-                    threads=self._settings.embedding_threads,
-                )
+                kwargs: dict[str, object] = {
+                    "threads": self._settings.embedding_threads,
+                    # See Settings.embedding_enable_cpu_mem_arena: the arena is the
+                    # single largest term in this process's RSS and it never shrinks.
+                    "enable_cpu_mem_arena": self._settings.embedding_enable_cpu_mem_arena,
+                    # Never data-parallel: a non-None value makes fastembed fork a
+                    # worker pool, which duplicates the 87 MB of weights per worker.
+                    "parallel": None,
+                }
+                if self._settings.fastembed_cache_path:
+                    kwargs["cache_dir"] = self._settings.fastembed_cache_path
+                model = TextEmbedding(self.model_name, **kwargs)  # type: ignore[arg-type]
             except Exception as exc:  # noqa: BLE001 - surfaced as a configuration error
                 raise ConfigurationError(
                     f"Could not load embedding model '{self.model_name}': {exc}"

@@ -262,10 +262,24 @@ class IngestionPipeline:
         )
 
     def _embed_and_store(self, chunks: list[Chunk]) -> None:
-        vectors = self._embeddings.embed_documents([c.text for c in chunks])
-        if len(vectors) != len(chunks):  # pragma: no cover - defensive
-            raise IngestionError("Embedding count did not match chunk count.")
-        self._chroma.upsert_chunks(chunks, vectors)
+        """Embed and upsert in small batches, so peak memory tracks batch_size.
+
+        Embedding the whole document at once would materialise every vector before the
+        first write. Streaming keeps only one batch of vectors alive at a time, and
+        because ``upsert`` is keyed on the deterministic chunk id, splitting the write
+        across batches is idempotent and leaves the index identical to a single call.
+        """
+        size = max(1, self._settings.embedding_batch_size)
+        stored = 0
+        for start in range(0, len(chunks), size):
+            batch = chunks[start : start + size]
+            vectors = self._embeddings.embed_documents([chunk.text for chunk in batch])
+            if len(vectors) != len(batch):  # pragma: no cover - defensive
+                raise IngestionError("Embedding count did not match chunk count.")
+            stored += self._chroma.upsert_chunks(batch, vectors)
+            del vectors, batch
+        if stored != len(chunks):  # pragma: no cover - defensive
+            raise IngestionError(f"Stored {stored} chunks but expected {len(chunks)}.")
 
     def _prune(self, keep_document_ids: set[str]) -> int:
         removed = 0
