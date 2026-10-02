@@ -17,7 +17,9 @@ class LLMRequest:
     system_prompt: str
     question: str
     context: str
-    max_output_tokens: int = 512
+    # Matches Settings.llm_max_output_tokens: thinking models share this budget with
+    # the visible answer, so a small value truncates the answer mid-sentence.
+    max_output_tokens: int = 2048
     temperature: float = 0.1
 
 

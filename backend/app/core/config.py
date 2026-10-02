@@ -39,7 +39,13 @@ class Settings(BaseSettings):
     llm_provider: Literal["gemini", "fake"] = "gemini"
     llm_model: str = "gemini-3.8-flash"
     llm_temperature: float = 0.1
-    llm_max_output_tokens: int = 512
+    # max_output_tokens is a SHARED budget covering both the model's internal
+    # "thinking" tokens and the visible answer. gemini-3.8-flash is a thinking
+    # model and spends ~500-800 tokens reasoning, so a small budget starves the
+    # answer and the response is cut mid-sentence (finish_reason=MAX_TOKENS).
+    # Keep this comfortably above observed thinking usage. GeminiProvider also
+    # detects MAX_TOKENS and escalates the budget automatically as a backstop.
+    llm_max_output_tokens: int = 2048
     llm_timeout_seconds: float = 30.0
     llm_max_attempts: int = 2
     # Excluded from every model_dump(): a settings dump ends up in logs and debug

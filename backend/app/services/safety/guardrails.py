@@ -60,7 +60,7 @@ NOT_FOUND_PHRASES: tuple[str, ...] = (
 MAX_ANSWER_SENTENCES = 4
 MAX_ANSWER_CHARS = 900
 
-_SENTENCE_SPLIT = re.compile(r"(?<=[.!?])\s+")
+_SENTENCE_SPLIT = re.compile(r"(?<=[.!?।॥])\s+")
 
 
 def contains_url(text: str) -> bool:
@@ -92,6 +92,28 @@ def reports_not_found(text: str) -> bool:
     return any(phrase in lowered for phrase in NOT_FOUND_PHRASES)
 
 
+# Punctuation that can end a sentence. A visible answer that lacks all of them
+# has most likely been cut off partway through by the token budget. Devanagari
+# answers end with a danda, so it counts as a proper terminator.
+_SENTENCE_END_CHARS = frozenset(".!?\"')]}।॥")
+
+# Devanagari danda (। / ॥) is the Devanagari full stop.
+_SENTENCE_TERMINATORS = (".", "!", "?", "।", "॥")
+
+
+def ends_mid_sentence(text: str) -> bool:
+    """True when the text carries no sentence-ending punctuation at all."""
+    stripped = text.strip()
+    if not stripped:
+        return False
+    return stripped[-1] not in _SENTENCE_END_CHARS
+
+
+def sentence_terminator(text: str) -> str:
+    """Return the full stop that matches the script the answer is written in."""
+    return "।" if any("\u0900" <= ch <= "\u097f" for ch in text) else "."
+
+
 def sentence_count(text: str) -> int:
     return len([s for s in _SENTENCE_SPLIT.split(text.strip()) if s])
 
@@ -103,7 +125,9 @@ def truncate_to_sentences(text: str, max_sentences: int = MAX_ANSWER_SENTENCES) 
         return " ".join(parts)
     kept = parts[:max_sentences]
     joined = " ".join(kept)
-    return joined if joined.endswith((".", "!", "?")) else joined.rstrip(",;: ") + "."
+    if joined.endswith(_SENTENCE_TERMINATORS):
+        return joined
+    return joined.rstrip(",;: ") + sentence_terminator(joined)
 
 
 def clip(text: str, max_chars: int = MAX_ANSWER_CHARS) -> str:

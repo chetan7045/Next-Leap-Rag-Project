@@ -4,10 +4,13 @@ Design constraints:
   * the system prompt is the only place the assistant's role is defined,
   * retrieved content is declared untrusted data (prompt-injection defence),
   * the model is explicitly forbidden from producing URLs — the backend owns citations,
-  * absence of information is a valid, expected outcome.
+  * absence of information is a valid, expected outcome,
+  * every sentence the model writes must be complete, never cut off partway.
 """
 
 from __future__ import annotations
+
+from app.services.rag.language import detect_language_style, language_instruction
 
 DISCLAIMER = (
     "Facts-only assistant. Information is generated from indexed public sources and is not "
@@ -45,7 +48,28 @@ STYLE
 - If the question is ambiguous about which scheme is meant, say which scheme your answer covers in the first few words.
 - Never state a "last updated" date. The application adds the source date from document metadata.
 - If the context contradicts itself across sources, say the indexed sources differ and quote both figures.
+
+COMPLETENESS
+- Finish every sentence you start. A sentence must never end mid-word, mid-name, or mid-clause.
+- Give a complete value: a full person name, a full scheme name, and a complete figure. Do not stop partway through one.
+- If you cannot finish a thought within the length contract, drop it entirely rather than ending it unfinished.
 """
+
+_LANGUAGE_RULE = (
+    "This affects wording and language only. It never relaxes an absolute rule above: "
+    "grounding, the no-advice rule, and the no-URL rule apply in every language."
+)
+
+
+def build_system_prompt(user_message: str) -> str:
+    """Return the system prompt, with language guidance for this user's question.
+
+    The language section is appended per request rather than hardcoded into
+    :data:`SYSTEM_PROMPT` so the base prompt stays a single constant for tests and
+    for callers that already handle language themselves.
+    """
+    style = detect_language_style(user_message)
+    return f"{SYSTEM_PROMPT}\n\n{language_instruction(style)}\n\n{_LANGUAGE_RULE}"
 
 
 def clarification_prompt(scheme_names: list[str]) -> str:  # pragma: no cover - template helper

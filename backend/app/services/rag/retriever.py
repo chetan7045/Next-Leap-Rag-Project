@@ -10,6 +10,7 @@ from app.core.logging import get_logger
 from app.models.retrieval import RetrievalResult, SearchHit
 from app.services.embeddings.embedding_service import EmbeddingService
 from app.services.rag.chroma_service import ChromaService
+from app.services.rag.query_normalizer import normalize_for_retrieval
 
 logger = get_logger("app.services.rag.retriever")
 
@@ -51,13 +52,24 @@ class Retriever:
         limit = self._settings.similarity_threshold if threshold is None else threshold
         candidates = max(k, self._settings.retrieve_candidates)
 
+        where = {"scheme_id": scheme_id} if scheme_id else None
+
+        # The corpus and the encoder are English-only, so a Hinglish or Devanagari
+        # question can match nothing (or match the wrong chunk confidently). When
+        # the question is not already English, search a translated variant too and
+        # merge. English questions take the single-query path below unchanged.
+        normalized = normalize_for_retrieval(query)
+
         start = time.perf_counter()
-        embedding = self._embeddings.embed_query(query)
+        embeddings = [self._embeddings.embed_query(query)]
+        if normalized:
+            embeddings.append(self._embeddings.embed_query(normalized))
         embedding_ms = (time.perf_counter() - start) * 1000
 
-        where = {"scheme_id": scheme_id} if scheme_id else None
         start = time.perf_counter()
-        hits = self._chroma.query(embedding, top_k=candidates, where=where)
+        hits: list[SearchHit] = []
+        for embedding in embeddings:
+            hits = self._merge_hits(hits, self._chroma.query(embedding, top_k=candidates, where=where))
         search_ms = (time.perf_counter() - start) * 1000
 
         kept = self._apply_threshold(hits, limit)[:k]
@@ -83,6 +95,24 @@ class Retriever:
             timing.total_ms,
         )
         return result, timing
+
+    @staticmethod
+    def _merge_hits(*groups: list[SearchHit]) -> list[SearchHit]:
+        """Merge ranked hit lists, keeping each chunk's best score.
+
+        The same chunk can be returned by both the original and the translated
+        query, so results are de-duplicated on ``chunk_id``. Text is not a safe
+        key here: two chunks from different schemes can legitimately share
+        identical boilerplate, and merging them would drop a real hit.
+        """
+        best: dict[str, SearchHit] = {}
+        for group in groups:
+            for hit in group:
+                key = hit.chunk_id or hit.text
+                existing = best.get(key)
+                if existing is None or hit.score > existing.score:
+                    best[key] = hit
+        return sorted(best.values(), key=lambda h: h.score, reverse=True)
 
     @staticmethod
     def _apply_threshold(hits: list[SearchHit], threshold: float) -> list[SearchHit]:

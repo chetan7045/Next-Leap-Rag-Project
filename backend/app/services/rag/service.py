@@ -31,7 +31,7 @@ from app.services.ingestion.registry import SourceRegistry
 from app.services.llm.base import LLMProvider, LLMRequest
 from app.services.rag.citation_builder import DATE_UNAVAILABLE, CitationBuilder
 from app.services.rag.context_builder import BuiltContext, build_context
-from app.services.rag.prompt import DISCLAIMER, SYSTEM_PROMPT
+from app.services.rag.prompt import DISCLAIMER, build_system_prompt
 from app.services.rag.retriever import Retriever
 from app.services.rag.validator import validate_and_repair
 from app.services.safety.classifier import classify
@@ -218,7 +218,7 @@ class RAGService:
             )
 
         request = LLMRequest(
-            system_prompt=SYSTEM_PROMPT,
+            system_prompt=build_system_prompt(message),
             question=self._compose_question(
                 message, resolution.scheme.name if resolution.scheme else None
             ),

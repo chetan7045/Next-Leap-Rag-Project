@@ -25,6 +25,20 @@ if TYPE_CHECKING:  # pragma: no cover
 
 logger = get_logger("app.services.llm.gemini")
 
+# Gemini's finish reason when generation stops because the output budget is
+# exhausted. Thinking tokens count against this same budget, so a response can
+# hit it even though the visible answer is only a sentence long.
+MAX_TOKENS_FINISH_REASON = "MAX_TOKENS"
+
+# Upper bound the provider will escalate to before giving up. Answers are capped
+# at a few sentences, so this is generous; it exists only as a stopping point.
+MAX_OUTPUT_TOKENS_CEILING = 8192
+
+# Shown when even the ceiling budget cannot produce an untruncated answer.
+INCOMPLETE_ANSWER_MESSAGE = (
+    "We couldn't generate a complete answer right now. Please try again."
+)
+
 
 class GeminiProvider(LLMProvider):
     """Google Gemini implementation of :class:`LLMProvider`."""
@@ -70,25 +84,48 @@ class GeminiProvider(LLMProvider):
             "Answer the question using only the SOURCE blocks above."
         )
 
-        config = self._build_config(request)
-
         last_error: Exception | None = None
+        budget = request.max_output_tokens
         for attempt in range(1, self._settings.llm_max_attempts + 1):
             try:
                 response = await asyncio.wait_for(
                     client.aio.models.generate_content(
                         model=self._model,
                         contents=user_prompt,
-                        config=config,
+                        config=self._build_config(request, budget),
                     ),
                     timeout=self._settings.llm_timeout_seconds,
                 )
                 text = self._extract_text(response)
                 if not text:
                     raise LLMProviderError("Gemini returned an empty response.")
+
+                # A truncated answer is worse than no answer: the user sees a
+                # sentence cut off mid-word. Thinking models hit the shared
+                # output budget, so grow it and try again rather than show it.
+                if self._was_truncated(response):
+                    can_retry = (
+                        attempt < self._settings.llm_max_attempts
+                        and budget < MAX_OUTPUT_TOKENS_CEILING
+                    )
+                    if can_retry:
+                        escalated = min(budget * 2, MAX_OUTPUT_TOKENS_CEILING)
+                        logger.warning(
+                            "Response hit the output token budget (%d); retrying with %d.",
+                            budget,
+                            escalated,
+                        )
+                        budget = escalated
+                        last_error = None
+                        continue
+                    raise LLMProviderError(
+                        f"Gemini response still truncated at the {budget}-token ceiling.",
+                        public_message=INCOMPLETE_ANSWER_MESSAGE,
+                    )
+
                 return text.strip()
             except LLMProviderError as exc:
-                if "empty response" not in exc.detail:
+                if "empty response" not in exc.detail and "truncated at the" not in exc.detail:
                     raise
                 last_error = exc
             except asyncio.TimeoutError as exc:
@@ -104,18 +141,33 @@ class GeminiProvider(LLMProvider):
 
         raise last_error or LLMProviderError("Gemini generation failed.")
 
-    def _build_config(self, request: LLMRequest) -> Any:
+    def _build_config(self, request: LLMRequest, max_output_tokens: int | None = None) -> Any:
         from google.genai import types
 
         return types.GenerateContentConfig(
             system_instruction=request.system_prompt,
             temperature=request.temperature,
-            max_output_tokens=request.max_output_tokens,
+            max_output_tokens=max_output_tokens or request.max_output_tokens,
             # No tools: grounding, search, and code execution are intentionally disabled
             # so the model can only use the supplied context.
             tools=None,
             candidate_count=1,
         )
+
+    @staticmethod
+    def _finish_reason(response: Any) -> str:
+        """Normalise the candidate finish reason to a plain string."""
+        candidates = getattr(response, "candidates", None) or []
+        if not candidates:
+            return ""
+        reason = getattr(candidates[0], "finish_reason", None)
+        if reason is None:
+            return ""
+        return str(getattr(reason, "value", reason))
+
+    @classmethod
+    def _was_truncated(cls, response: Any) -> bool:
+        return cls._finish_reason(response) == MAX_TOKENS_FINISH_REASON
 
     @staticmethod
     def _extract_text(response: Any) -> str:

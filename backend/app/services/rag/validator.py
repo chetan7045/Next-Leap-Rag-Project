@@ -67,6 +67,18 @@ def validate_and_repair(raw_text: str, *, max_sentences: int = MAX_SENTENCES) ->
         problems.append("length_truncated")
     text = guardrails.clip(text)
 
+    # 5. Observability for truncation. GeminiProvider already retries when it hits
+    # the output token budget, so reaching here is unusual and worth a log line.
+    # The text is kept: appending punctuation to a cut-off answer would disguise
+    # the truncation rather than fix it.
+    if guardrails.ends_mid_sentence(text):
+        problems.append("incomplete_final_sentence")
+        logger.warning(
+            "Generated answer has no sentence-ending punctuation (%d chars): %s",
+            len(text),
+            text[:120],
+        )
+
     return ValidatedAnswer(
         text=text,
         acceptable=True,
